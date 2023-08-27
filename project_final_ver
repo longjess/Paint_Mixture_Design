@@ -1,0 +1,101 @@
+library(tidyverse)
+library(mixexp)
+
+setwd("C:/Jessica/Stanford/Fall 2022/STATS 263/Project")
+
+#Randomize run order 
+set.seed(0)
+sample(16)
+
+#Read experimental data
+data <- read.csv("experiment.csv")
+print(data)
+#Get components and response values
+df <- data_frame(x1 = data$Flour, x2 = data$Cornstarch,
+                 x3 = data$Glue, x4 = data$Egg, y = data$Minutes) %>%
+  filter(!row_number()==1)
+
+#Linear model 
+model_l <- MixModel(df, "y", c("x1", "x2", "x3", "x4"), model=1)
+model_l2 <- lm(y ~ x2 + x3 + x4, data = df)
+summary(model_l2)
+model_l3 <- lm(y ~ -1 + x1 + x2 + x3 + x4, data = df)
+summary(model_l3)
+#Quadratic model 
+model_q <- MixModel(df, "y", c("x1", "x2", "x3", "x4"), model=2)
+model_q2 <- lm(y ~ x2 + x3 + x4 + x1:x2 + x1:x3 + x1:x4 + x2:x3 + x2:x4 + x3:x4, data = df)
+summary(model_q2)
+#Cubic model 
+model_c <- MixModel(df, "y", c("x1", "x2", "x3", "x4"), model=4)
+model_c2 <- lm(y ~ x2 + x3 + x4 + x1:x2 + x1:x3 + x1:x4 + x2:x3 + x2:x4 + x3:x4 + 
+                 x1:x2:x3 + x1:x2:x4 + x1:x3:x4 + x2:x3:x4, data = df)
+summary(model_c2)
+
+#Final model
+model_f<-lm(y~x1+x2+x3+x1:x3,data=df)
+summary(model_f)
+anova(model_l2, model_f)
+anova(model_f, model_q2)
+plot(model_f)
+par(mfrow = c(2, 2))
+plot(model_f)
+cooks_d <- cooks.distance(model_f)
+
+
+# Contour plots
+ModelPlot(model = model_f, dimensions = list(x1 = "x1", x2 = "x2", x3 = "x3"),
+          slice = list(mix.vars = c(x4 = )),
+          main = paste("Egg = ", toString(0, width = 4)),
+          constraints = FALSE, contour = TRUE, cuts=7,
+          fill = FALSE, axislabs = c("Flour", "Cornstarch", "Glue"),
+          cornerlabs = c("X1", "X2", "X3"), pseudo = FALSE)
+ModelPlot(model = model_f, dimensions = list(x1 = "x1", x2 = "x2", x3 = "x4"),
+          slice = list(mix.vars = c(x3 = 0)),
+          main = paste("Glue = ", toString(0, width = 4)),
+          constraints = FALSE, contour = TRUE, cuts=7,
+          fill = FALSE, axislabs = c("Flour", "Cornstarch", "Egg"),
+          cornerlabs = c("X1", "X2", "X4"), pseudo = FALSE)
+ModelPlot(model = model_f, dimensions = list(x1 = "x1", x2 = "x3", x3 = "x4"),
+          slice = list(mix.vars = c(x2 = 0)),
+          main = paste("Cornstarch = ", toString(0, width = 4)),
+          constraints = FALSE, contour = TRUE, cuts=7,
+          fill = FALSE, axislabs = c("Flour", "Glue", "Egg"),
+          cornerlabs = c("X1", "X3", "X4"), pseudo = FALSE)
+ModelPlot(model = model_f, dimensions = list(x1 = "x2", x2 = "x3", x3 = "x4"),
+          slice = list(mix.vars = c(x1 = 0)),
+          main = paste("Flour = ", toString(0, width = 4)),
+          constraints = FALSE, contour = TRUE, cuts=7,
+          fill = FALSE, axislabs = c("Cornstarch", "Glue", "Egg"),
+          cornerlabs = c("X2", "X3", "X4"), pseudo = FALSE)
+
+#Response trace plot
+get_responses <- function(i, n, coeff){
+  X <- matrix(rep(0, n*5), ncol=5)
+  X[, i] <- seq(from=0,to=1,by=0.001)
+  X[, -c(i,5)] <- 0.25 - (X[, i]-0.25)*0.25/0.75
+  X[, 5] <- X[, 1] * X[, 3] 
+  response <- X%*%coeff
+  return(response)
+}
+coeff <- c(39.551 + 8.408, 21.340 + 8.408, 32.965 + 8.408, 8.408, 198.683)
+n <- 1/0.001 + 1
+responses <- sapply(c(1:4), get_responses, n, coeff)
+df_responses <- as.data.frame(responses) %>%
+  mutate(index = seq(from=-0.25,to=0.75,by=0.001)) %>%
+  rename(Flour = V1, Cornstarch = V2, Glue = V3, Egg = V4) %>%
+  pivot_longer(cols=c("Flour", "Cornstarch", "Glue", "Egg"),
+               values_to = "responses", names_to = "Ingredient")
+ggplot(df_responses, aes(x = index, y = responses)) +
+  geom_line(aes(color=Ingredient)) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    text = element_text(size = 7)
+  ) +
+  scale_color_brewer(palette = "Set1") +
+  geom_hline(yintercept=13, color="black") +
+  geom_text(aes(0,13,label = "13 min", vjust = -1), size=3) +
+  ggtitle("Effect Plot (Cox Direction)") + 
+  xlab("Deviation from Centroid") +
+  ylab("Predicted Response (min)") +
+  theme_minimal()
